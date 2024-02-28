@@ -1,70 +1,76 @@
 const express = require('express');
-const http = require('http');
 const fs = require('fs');
-const WebSocket = require('ws');
 
 const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 
-// Serve static files (including the HTML file)
+const logFilePath = 'app.log'; // Update this with the actual path to your log file
+let clients = [];
+
+
 app.use(express.static('public'));
 
-// Function to watch log file for changes and send updates to clients
-function watchLogFile() {
-  let filePosition = 0;
+// Function to stream updates to connected clients
+const streamLogFile = (res) => {
+    const stream = fs.createReadStream(logFilePath);
+    
+    stream.on('data', (chunk) => {
+        res.write(chunk);
+    });
+    stream.on('end', () => {
+        res.end();
+    });
+    stream.on('error', (err) => {
+        console.error('Error reading log file:', err);
+        res.end();
+    });
+};
 
-  // Watch for changes to the log file
-  fs.watch('app.log', (eventType, filename) => {
-    if (eventType === 'change') {
-      // Read the updated content from the file position
-      fs.stat('app.log', (err, stats) => {
+// Function to append log message to the log file
+const appendToLogFile = (message) => {
+    fs.appendFile(logFilePath, `${new Date().toISOString()} - ${message}\n`, (err) => {
         if (err) {
-          console.error('Error reading log file stats:', err);
-          return;
+            console.error('Error appending to log file:', err);
         }
-        const fileSize = stats.size;
-        const readStream = fs.createReadStream('app.log', {
-          start: filePosition,
-          end: fileSize,
-        });
+    });
+};
 
-        readStream.on('data', (chunk) => {
-          wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(chunk.toString());
-            }
-          });
-        });
+// Route to handle client connections
+app.get('/log', (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    });
 
-        // Update the file position for the next read
-        filePosition = fileSize;
-      });
-    }
-  });
-}
+    // Stream updates to client
+    streamLogFile(res);
 
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-  console.log('Client connected');
-  // Handle WebSocket messages here if needed
+    // Add client to the list
+    clients.push(res);
 
-  // Send the initial contents of the log file to the client
-  fs.readFile('app.log', 'utf-8', (err, data) => {
-    if (err) {
-      console.error('Error reading log file:', err);
-      return;
-    }
-    ws.send(data);
-  });
+    // Log client connection
+    appendToLogFile('Client connected');
 
-  ws.on('close', () => {
-    console.log('Client disconnected');
-  });
+    // Remove client when connection closes
+    res.on('close', () => {
+        clients = clients.filter(client => client !== res);
+        // Log client disconnection
+        appendToLogFile('Client disconnected');
+    });
 });
 
-server.listen(3000, () => {
-  console.log('Server started on port 3000');
-  // Call watchLogFile() here if you haven't already
-  watchLogFile();
+// Watch for changes in log file and notify clients
+fs.watchFile(logFilePath, (curr, prev) => {
+    if (curr.size !== prev.size) {
+        // Notify all connected clients about changes
+        clients.forEach(client => {
+            client.write('\n'); // Add a separator
+            streamLogFile(client);
+        });
+    }
+});
+
+app.listen(3000, () => {
+    console.log('Server running on port 3000');
 });

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Viewer</title>
+    <style>
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <h1>Log Viewer</h1>
+    <pre id="log-content"></pre>
+
+    <script>
+        const logContent = document.getElementById('log-content');
+
+        // Function to update log content
+        const updateLogContent = (data) => {
+            logContent.innerText += data;
+            logContent.scrollTop = logContent.scrollHeight; // Auto-scroll to bottom
+        };
+
+        // Function to fetch log content via AJAX
+        const fetchLogContent = () => {
+            const xhr = new XMLHttpRequest();
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    if (xhr.status === 200) {
+                        updateLogContent(xhr.responseText);
+                    }
+                }
+            };
+            xhr.open('GET', 'http://localhost:3000/log', true);
+            xhr.send();
+        };
+
+        // Fetch initial log content
+        fetchLogContent();
+
+        // Periodically fetch updates
+        setInterval(fetchLogContent, 3000); // Adjust the interval as needed
+    </script>
+</body>
+</html>
